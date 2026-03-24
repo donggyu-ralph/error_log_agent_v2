@@ -69,7 +69,12 @@ async def plan_fix_node(state: AgentState) -> dict:
 - file_path는 반드시 "src/"로 시작하는 상대 경로
 """
 
-    llm = ChatOpenAI(model=settings.llm.model, temperature=settings.llm.temperature, max_tokens=settings.llm.max_tokens)
+    llm = ChatOpenAI(
+        model=settings.llm.model,
+        temperature=settings.llm.temperature,
+        max_tokens=settings.llm.max_tokens,
+        model_kwargs={"response_format": {"type": "json_object"}},
+    )
     response = await llm.ainvoke(prompt)
 
     # Parse response

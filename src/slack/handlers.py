@@ -225,24 +225,50 @@ async def _resume_graph(thread_id: str, feedback: dict, say=None) -> None:
             await say(f":warning: 그래프 상태 확인 실패: {str(e)[:200]}")
         return
 
-    # Resume the graph — it continues from where interrupt() paused
+    # Resume the graph with streaming — report each node completion to Slack
     try:
         logger.info("resuming_graph", thread_id=thread_id, action=feedback.get("action"))
 
         if say:
             await say(":gear: 에이전트가 작업을 재개합니다...")
 
-        # Resume the graph — continues from where interrupt() paused
         from langgraph.types import Command
-        result = await agent.ainvoke(Command(resume=feedback), config=config)
+
+        NODE_MESSAGES = {
+            "apply_fix": ":hammer: 코드 수정 중...",
+            "build_image": ":package: Docker 이미지 빌드 중...",
+            "deploy_staging": ":rocket: 스테이징 배포 중...",
+            "verify_staging": ":mag: 스테이징 검증 중...",
+            "deploy_production": ":rocket: 프로덕션 배포 중...",
+            "monitor": ":eyes: 배포 후 모니터링 중...",
+        }
+
+        result = None
+        reported_nodes = set()
+
+        async for event in agent.astream_events(
+            Command(resume=feedback), config=config, version="v2"
+        ):
+            kind = event.get("event", "")
+            name = event.get("name", "")
+
+            # Report node start
+            if kind == "on_chain_start" and name in NODE_MESSAGES and name not in reported_nodes:
+                reported_nodes.add(name)
+                if say:
+                    await say(NODE_MESSAGES[name])
+
+            # Capture final output
+            if kind == "on_chain_end" and name == "LangGraph":
+                result = event.get("data", {}).get("output", {})
 
         logger.info("graph_resumed_completed", thread_id=thread_id)
 
-        # Report results to Slack
+        # Report final results to Slack
         if result and say:
             await _report_result(result, thread_id, say)
 
-        # Update DB with final results
+        # Update DB
         if result and _db:
             await _update_fix_history_from_result(thread_id, result)
 
