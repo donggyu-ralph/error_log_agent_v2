@@ -273,9 +273,10 @@ async def _resume_graph(thread_id: str, feedback: dict, say=None) -> None:
             await _update_fix_history_from_result(thread_id, result)
 
     except Exception as e:
-        logger.error("graph_resume_failed", thread_id=thread_id, error=str(e))
+        error_msg = str(e) or repr(e)
+        logger.error("graph_resume_failed", thread_id=thread_id, error=error_msg)
         if say:
-            await say(f":x: 작업 중 오류: {str(e)[:300]}")
+            await say(f":x: 작업 중 오류: {error_msg[:300]}")
 
 
 async def _report_result(result: dict, thread_id: str, say) -> None:
