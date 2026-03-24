@@ -47,6 +47,11 @@ def _find_build_node() -> str:
 
 async def build_image_node(state: AgentState) -> dict:
     """Build Docker image using a dynamic build Pod and push to Harbor."""
+    return await asyncio.to_thread(_build_image_sync, state)
+
+
+def _build_image_sync(state: AgentState) -> dict:
+    """Synchronous image build (runs in thread to avoid blocking event loop)."""
     settings = get_settings()
     project = settings.target_projects[0]
     commit_hash = state.get("git_commit_hash", "")

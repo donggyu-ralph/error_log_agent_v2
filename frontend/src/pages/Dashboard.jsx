@@ -115,7 +115,7 @@ function Dashboard() {
                   <td>{new Date(err.timestamp).toLocaleString()}</td>
                   <td>{err.service_name}</td>
                   <td><span className={`badge ${err.level?.toLowerCase()}`}>{err.level}</span></td>
-                  <td>{err.error_type || '-'}</td>
+                  <td>{err.error_type || '알 수 없음'}</td>
                   <td style={{ maxWidth: 400, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     <Link to={`/errors/${err.id}`} style={{ color: '#58a6ff', textDecoration: 'none' }}>
                       {err.message}

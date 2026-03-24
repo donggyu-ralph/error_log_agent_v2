@@ -1,4 +1,5 @@
 """Slack interactive message handlers."""
+import asyncio
 import json
 from slack_bolt.async_app import AsyncApp
 
@@ -53,7 +54,8 @@ def register_handlers(app: AsyncApp) -> None:
         await _disable_buttons(client, body, f":white_check_mark: *승인됨* by @{user}")
         await say("코드 수정을 시작합니다. 진행 상황은 이 채널에 보고됩니다.")
 
-        await _handle_approval(thread_id, {"action": "approve", "user": user}, say)
+        # Run in background to avoid blocking the event loop (liveness probe)
+        asyncio.create_task(_handle_approval(thread_id, {"action": "approve", "user": user}, say))
 
     @app.action("reject_fix")
     async def handle_reject(ack, body, say, client):
@@ -157,11 +159,11 @@ def register_handlers(app: AsyncApp) -> None:
 
         await _disable_buttons(client, body, f":merge: *Merge 요청됨* by @{user}")
 
-        success = await _github_merge_branch(branch)
+        success, msg = await _github_merge_branch(branch)
         if success:
             await say(f":white_check_mark: `{branch}`가 `main`에 merge되었습니다.")
         else:
-            await say(":warning: Merge에 실패했습니다. GitHub에서 직접 merge해주세요.")
+            await say(f":warning: {msg}")
 
     @app.action("keep_branch")
     async def handle_keep_branch(ack, body, say, client):
@@ -471,8 +473,8 @@ async def _github_create_pr(branch: str) -> str | None:
         return None
 
 
-async def _github_merge_branch(branch: str) -> bool:
-    """Merge a branch into main via GitHub API."""
+async def _github_merge_branch(branch: str) -> tuple[bool, str]:
+    """Merge a branch into main via GitHub API. Returns (success, message)."""
     import httpx
     from src.config.settings import get_settings
 
@@ -481,11 +483,11 @@ async def _github_merge_branch(branch: str) -> bool:
     repo_url = settings.target_projects[0].git_repo if settings.target_projects else ""
 
     if not token or not repo_url:
-        return False
+        return False, "GitHub 설정 없음"
 
     parts = repo_url.replace("https://github.com/", "").replace(".git", "").split("/")
     if len(parts) < 2:
-        return False
+        return False, "잘못된 리포 URL"
     owner, repo = parts[0], parts[1]
 
     async with httpx.AsyncClient() as client:
@@ -505,7 +507,11 @@ async def _github_merge_branch(branch: str) -> bool:
 
     if resp.status_code in (201, 204):
         logger.info("github_merge_completed", branch=branch)
-        return True
+        return True, "Merge 완료"
+    elif resp.status_code == 409:
+        logger.warning("github_merge_conflict", branch=branch)
+        repo_url_clean = repo_url.replace(".git", "")
+        return False, f"Merge conflict 발생. GitHub에서 직접 해결해주세요: {repo_url_clean}/compare/main...{branch}"
     else:
         logger.error("github_merge_failed", status=resp.status_code, body=resp.text[:300])
-        return False
+        return False, f"Merge 실패 (HTTP {resp.status_code})"
