@@ -69,7 +69,7 @@ def register_handlers(app: AsyncApp) -> None:
             },
         )
 
-    @app.view_regex(r"feedback_modal_.*")
+    @app.view("")
     async def handle_feedback_submit(ack, body, view):
         await ack()
         callback_id = view["callback_id"]
