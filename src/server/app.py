@@ -12,7 +12,7 @@ from src.config.settings import get_settings
 from src.config.logging_config import setup_logging, get_logger
 from src.db.manager import DBManager
 from src.server.routes import router, set_db
-from src.server.scheduler import start_scheduler, stop_scheduler
+from src.server.scheduler import start_scheduler, stop_scheduler, set_scheduler_db
 from src.slack.bot import start_slack_bot, stop_slack_bot
 
 
@@ -29,6 +29,7 @@ async def lifespan(app: FastAPI):
     db = DBManager(settings.database)
     await db.initialize()
     set_db(db)
+    set_scheduler_db(db)
 
     # Start scheduler
     start_scheduler()

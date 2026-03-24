@@ -39,13 +39,18 @@ def build_error_report(
         ns = err.get("namespace", "")
         pod = err.get("pod_name", "")
 
-        info_text = f"*서비스:* {svc}\n"
+        # Format timestamp
+        ts = err.get("timestamp", "unknown")
+        if isinstance(ts, str):
+            ts = ts.replace(",", ".")
+
+        info_text = f"*서비스:* `{svc}`\n"
         if ns:
-            info_text += f"*네임스페이스:* {ns}\n"
+            info_text += f"*네임스페이스:* `{ns}`\n"
         if pod:
-            info_text += f"*Pod:* {pod}\n"
-        info_text += f"*감지 시각:* {err.get('timestamp', 'unknown')}\n"
-        info_text += f"*에러 타입:* {err.get('error_type', 'Unknown')}\n"
+            info_text += f"*Pod:* `{pod}`\n"
+        info_text += f"*감지 시각:* {ts}\n"
+        info_text += f"*에러 타입:* `{err.get('error_type') or '알 수 없음'}`\n"
         info_text += f"*발생 위치:* {format_file_location(err)}\n"
 
         blocks.append({
@@ -53,10 +58,22 @@ def build_error_report(
             "text": {"type": "mrkdwn", "text": info_text},
         })
 
-        # Error message
+        # Error message - clean up for readability
+        raw_msg = err.get("message", "Unknown")
+        # If it looks like a structlog dict, extract the error part
+        if raw_msg.startswith("{") or raw_msg.startswith("{'"):
+            try:
+                import ast
+                data = ast.literal_eval(raw_msg)
+                if isinstance(data, dict):
+                    error_part = data.get("error", raw_msg)
+                    raw_msg = error_part.split("\nFor more information")[0].strip()
+            except (ValueError, SyntaxError):
+                pass
+
         blocks.append({
             "type": "section",
-            "text": {"type": "mrkdwn", "text": f"*에러 메시지:*\n{err.get('message', 'Unknown')}"},
+            "text": {"type": "mrkdwn", "text": f"*에러 메시지:*\n```{raw_msg}```"},
         })
 
         # Traceback

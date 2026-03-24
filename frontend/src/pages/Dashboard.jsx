@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 import { getSummary, getTimeline, getErrorsByType } from '../api';
 
@@ -29,6 +29,8 @@ function Dashboard() {
     fetchData();
   }, []);
 
+  const navigate = useNavigate();
+
   if (loading) return <div className="loading">Loading...</div>;
 
   const recentErrors = summary?.recent_errors || [];
@@ -42,19 +44,19 @@ function Dashboard() {
       </div>
 
       <div className="stats-grid">
-        <div className="stat-card critical">
+        <div className="stat-card critical clickable" onClick={() => navigate('/errors')}>
           <div className="value">{todayTotal}</div>
           <div className="label">Errors Today</div>
         </div>
-        <div className="stat-card warning">
+        <div className="stat-card warning clickable" onClick={() => navigate('/errors')}>
           <div className="value">{recentErrors.length}</div>
           <div className="label">Recent Errors</div>
         </div>
-        <div className="stat-card success">
+        <div className="stat-card success clickable" onClick={() => navigate('/history')}>
           <div className="value">{recentFixes.length}</div>
           <div className="label">Recent Fixes</div>
         </div>
-        <div className="stat-card info">
+        <div className="stat-card info clickable" onClick={() => navigate('/errors')}>
           <div className="value">{byType.length}</div>
           <div className="label">Error Types</div>
         </div>
@@ -64,15 +66,16 @@ function Dashboard() {
         <div className="card">
           <h3>Error Timeline (7 days)</h3>
           <ResponsiveContainer width="100%" height={250}>
-            <LineChart data={timeline}>
+            <LineChart data={timeline.map(t => ({ ...t, label: `${t.date} ${String(t.hour).padStart(2, '0')}:00` }))}>
               <CartesianGrid strokeDasharray="3 3" stroke="#30363d" />
-              <XAxis dataKey="date" stroke="#8b949e" fontSize={11} />
-              <YAxis stroke="#8b949e" fontSize={11} />
+              <XAxis dataKey="label" stroke="#8b949e" fontSize={11} />
+              <YAxis stroke="#8b949e" fontSize={11} allowDecimals={false} />
               <Tooltip
-                contentStyle={{ background: '#161b22', border: '1px solid #30363d', borderRadius: 6 }}
+                contentStyle={{ background: '#161b22', border: '1px solid #30363d', borderRadius: 6, color: '#e1e4e8' }}
                 labelStyle={{ color: '#8b949e' }}
+                formatter={(value) => [`${value} errors`, 'Count']}
               />
-              <Line type="monotone" dataKey="total" stroke="#f85149" strokeWidth={2} dot={false} />
+              <Line type="monotone" dataKey="total" stroke="#f85149" strokeWidth={2} dot={{ r: 4, fill: '#f85149' }} />
             </LineChart>
           </ResponsiveContainer>
         </div>

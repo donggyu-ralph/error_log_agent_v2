@@ -25,6 +25,13 @@ COPY src/ src/
 COPY config.yaml .
 COPY --from=frontend-build /frontend/dist frontend/dist
 
+# Include target service source for code analysis/fix
+COPY target-source/ /workspace/data-pipeline-service/
+RUN cd /workspace/data-pipeline-service && \
+    git init && git add -A && \
+    git -c user.email="agent@atdev.ai" -c user.name="Error Log Agent" \
+    commit -m "Initial: data-pipeline-service source"
+
 EXPOSE 8000
 
 CMD ["uvicorn", "src.server.app:app", "--host", "0.0.0.0", "--port", "8000"]

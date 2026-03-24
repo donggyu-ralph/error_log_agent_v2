@@ -153,6 +153,10 @@ async def apply_fix_node(state: AgentState) -> dict:
     if actually_modified_files:
         commit_msg = f"fix: {fix_plan.get('summary', 'Auto-fix by error-log-agent')}"
         commit_hash = _commit_changes(commit_msg, project_root, actually_modified_files)
+        logger.info("code_fix_committed", branch=branch_name, commit=commit_hash, files=actually_modified_files)
+    else:
+        logger.warning("no_files_modified", branch=branch_name,
+                       target_files=[t.get("file_path") for t in fix_plan.get("target_files", [])])
 
     return {
         "git_branch": branch_name,

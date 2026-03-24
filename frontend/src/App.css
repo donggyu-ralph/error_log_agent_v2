@@ -127,6 +127,16 @@ body {
 .stat-card.success .value { color: #3fb950; }
 .stat-card.info .value { color: #58a6ff; }
 
+.stat-card.clickable {
+  cursor: pointer;
+  transition: transform 0.15s, border-color 0.15s;
+}
+
+.stat-card.clickable:hover {
+  transform: translateY(-2px);
+  border-color: #58a6ff;
+}
+
 /* Charts grid */
 .charts-grid {
   display: grid;

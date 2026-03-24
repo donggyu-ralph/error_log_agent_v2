@@ -71,23 +71,45 @@ async def plan_fix_node(state: AgentState) -> dict:
 
     # Parse response
     import json
+    import re
+
+    raw = response.content
+    fix_plan = None
+
+    # Try direct JSON parse
     try:
-        fix_plan = json.loads(response.content)
+        fix_plan = json.loads(raw)
     except json.JSONDecodeError:
-        # Try to extract JSON from markdown code block
-        import re
-        json_match = re.search(r"```(?:json)?\s*(.*?)```", response.content, re.DOTALL)
+        pass
+
+    # Try extracting from markdown code block
+    if fix_plan is None:
+        json_match = re.search(r"```(?:json)?\s*(.*?)```", raw, re.DOTALL)
         if json_match:
-            fix_plan = json.loads(json_match.group(1))
-        else:
-            fix_plan = {
-                "summary": response.content[:200],
-                "root_cause": "Unable to parse structured plan",
-                "fix_description": response.content,
-                "target_files": [],
-                "estimated_risk": "medium",
-                "requires_restart": False,
-            }
+            try:
+                fix_plan = json.loads(json_match.group(1))
+            except json.JSONDecodeError:
+                pass
+
+    # Try finding JSON object pattern
+    if fix_plan is None:
+        json_match = re.search(r'\{[^{}]*"summary"[^{}]*\}', raw, re.DOTALL)
+        if json_match:
+            try:
+                fix_plan = json.loads(json_match.group(0))
+            except json.JSONDecodeError:
+                pass
+
+    # Fallback: use raw text
+    if fix_plan is None:
+        fix_plan = {
+            "summary": raw[:200],
+            "root_cause": "LLM 응답 파싱 실패 - 원문 참조",
+            "fix_description": raw,
+            "target_files": [],
+            "estimated_risk": "medium",
+            "requires_restart": False,
+        }
 
     logger.info("fix_plan_created", summary=fix_plan.get("summary", "")[:100])
 

@@ -107,13 +107,15 @@ class DBManager:
 
     async def insert_error_log(self, error: ErrorInfo) -> str:
         error_id = str(uuid.uuid4())
+        # Fix timestamp format: "2026-03-24 04:36:24,770" → "2026-03-24 04:36:24.770"
+        ts = error.timestamp.replace(",", ".") if isinstance(error.timestamp, str) else error.timestamp
         with self.conn.cursor() as cur:
             cur.execute(
                 """INSERT INTO error_logs
                    (id, timestamp, level, message, traceback, file_path, line_number,
                     function_name, error_type, source, pod_name, namespace, service_name, signature)
                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
-                (error_id, error.timestamp, error.level, error.message,
+                (error_id, ts, error.level, error.message,
                  error.traceback, error.file_path, error.line_number,
                  error.function_name, error.error_type, error.source,
                  error.pod_name, error.namespace, error.service_name, error.signature),
@@ -181,7 +183,8 @@ class DBManager:
     # --- Error Statistics ---
 
     async def update_error_stats(self, error: ErrorInfo) -> None:
-        ts = datetime.fromisoformat(error.timestamp) if isinstance(error.timestamp, str) else error.timestamp
+        ts_str = error.timestamp.replace(",", ".") if isinstance(error.timestamp, str) else str(error.timestamp)
+        ts = datetime.fromisoformat(ts_str)
         with self.conn.cursor() as cur:
             cur.execute(
                 """INSERT INTO error_statistics (date, hour, error_type, error_level, service_name, count)

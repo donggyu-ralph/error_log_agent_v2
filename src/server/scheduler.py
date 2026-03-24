@@ -9,6 +9,12 @@ from src.config.logging_config import get_logger
 logger = get_logger(__name__)
 
 _scheduler: AsyncIOScheduler | None = None
+_db = None
+
+
+def set_scheduler_db(db):
+    global _db
+    _db = db
 
 
 async def _run_agent_cycle():
@@ -39,11 +45,46 @@ async def _run_agent_cycle():
 
     try:
         result = await agent.ainvoke(initial_state, config=config)
-        error_count = len(result.get("error_logs", []))
+        error_logs = result.get("error_logs", [])
+        error_count = len(error_logs)
         logger.info("agent_cycle_completed", thread_id=thread_id, errors_found=error_count)
 
-        # If errors found and approval needed, register for Slack callback
-        if error_count > 0 and result.get("fix_plan"):
+        if error_count == 0:
+            return
+
+        # Save errors to DB
+        if _db:
+            for err in error_logs:
+                try:
+                    from src.models.log_entry import ErrorInfo
+                    error_info = ErrorInfo(**err)
+                    await _db.insert_error_log(error_info)
+                    await _db.update_error_stats(error_info)
+                except Exception as e:
+                    logger.error("db_insert_error_failed", error=str(e))
+
+        fix_plan = result.get("fix_plan")
+        analysis = result.get("analysis", "")
+
+        if not fix_plan:
+            return
+
+        # Save fix history to DB
+        fix_history_id = None
+        if _db:
+            try:
+                error_log_id = None
+                fix_history_id = await _db.create_fix_history(
+                    error_log_id=error_log_id,
+                    thread_id=thread_id,
+                    analysis=analysis,
+                    fix_plan=fix_plan,
+                )
+            except Exception as e:
+                logger.error("db_fix_history_failed", error=str(e))
+
+        # Send error report to Slack
+        try:
             from src.slack.handlers import register_pending_approval
             from src.slack.bot import get_slack_app
             from src.slack.message_builder import build_error_report
@@ -51,25 +92,30 @@ async def _run_agent_cycle():
             settings = get_settings()
             app = get_slack_app()
 
-            # Send error report to Slack
             blocks = build_error_report(
                 thread_id=thread_id,
-                error_logs=result.get("error_logs", []),
-                analysis=result.get("analysis", ""),
-                fix_plan=result.get("fix_plan", {}),
+                error_logs=error_logs,
+                analysis=analysis,
+                fix_plan=fix_plan,
             )
 
             await app.client.chat_postMessage(
                 channel=settings.slack.channel,
                 blocks=blocks,
-                text=f"에러 감지: {result['error_logs'][0].get('error_type', 'Unknown')}",
+                text=f"에러 감지: {error_logs[0].get('error_type', 'Unknown')}",
             )
 
             register_pending_approval(thread_id, {
                 "graph": agent,
                 "config": config,
                 "deployment": result.get("deployment"),
+                "fix_history_id": fix_history_id,
             })
+
+            logger.info("slack_report_sent", thread_id=thread_id)
+
+        except Exception as e:
+            logger.error("slack_send_failed", thread_id=thread_id, error=str(e))
 
     except Exception as e:
         logger.error("agent_cycle_failed", thread_id=thread_id, error=str(e))
