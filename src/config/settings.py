@@ -119,6 +119,13 @@ class HarborSettings(BaseSettings):
     password: str = Field(default="", alias="HARBOR_PASSWORD")
 
 
+class GitHubSettings(BaseSettings):
+    token: str = Field(default="", alias="GITHUB_TOKEN")
+    user: str = Field(default="", alias="GITHUB_USER")
+
+    model_config = {"populate_by_name": True, "extra": "ignore"}
+
+
 class DashboardSettings(BaseSettings):
     enabled: bool = True
     port: int = 3000
@@ -136,6 +143,7 @@ class Settings(BaseSettings):
     deployer: DeployerSettings = DeployerSettings()
     database: DatabaseSettings = DatabaseSettings()
     harbor: HarborSettings = HarborSettings()
+    github: GitHubSettings = GitHubSettings()
     dashboard: DashboardSettings = DashboardSettings()
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8", "extra": "ignore"}

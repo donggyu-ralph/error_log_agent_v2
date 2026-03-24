@@ -19,7 +19,7 @@ log_collector:
 
 target_projects:
   - name: "data-pipeline-service"
-    git_repo: "/workspace/data-pipeline-service"
+    git_repo: "https://github.com/donggyu-ralph/pipeline_target_service.git"
     root_path: "/workspace/data-pipeline-service"
     k8s:
       namespace: "pipeline"

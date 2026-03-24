@@ -133,6 +133,46 @@ def register_handlers(app: AsyncApp) -> None:
             )
             await say("롤백 완료." if success else "롤백 실패. 수동 확인 필요.")
 
+    @app.action("create_pr")
+    async def handle_create_pr(ack, body, say, client):
+        await ack()
+        value = body["actions"][0]["value"]
+        thread_id, branch = value.split("|", 1)
+        user = body["user"]["username"]
+
+        await _disable_buttons(client, body, f":pull_request: *PR 생성 요청됨* by @{user}")
+
+        result = await _github_create_pr(branch)
+        if result:
+            await say(f":white_check_mark: PR이 생성되었습니다: {result}")
+        else:
+            await say(":warning: PR 생성에 실패했습니다. GitHub에서 직접 생성해주세요.")
+
+    @app.action("merge_branch")
+    async def handle_merge(ack, body, say, client):
+        await ack()
+        value = body["actions"][0]["value"]
+        thread_id, branch = value.split("|", 1)
+        user = body["user"]["username"]
+
+        await _disable_buttons(client, body, f":merge: *Merge 요청됨* by @{user}")
+
+        success = await _github_merge_branch(branch)
+        if success:
+            await say(f":white_check_mark: `{branch}`가 `main`에 merge되었습니다.")
+        else:
+            await say(":warning: Merge에 실패했습니다. GitHub에서 직접 merge해주세요.")
+
+    @app.action("keep_branch")
+    async def handle_keep_branch(ack, body, say, client):
+        await ack()
+        value = body["actions"][0]["value"]
+        thread_id, branch = value.split("|", 1)
+        user = body["user"]["username"]
+
+        await _disable_buttons(client, body, f":bookmark: *브랜치 유지* by @{user}")
+        await say(f"브랜치 `{branch}`를 유지합니다. 나중에 수동으로 처리해주세요.")
+
     @app.event("app_mention")
     async def handle_mention(event, say):
         text = event.get("text", "").lower()
@@ -221,9 +261,19 @@ async def _handle_approval(thread_id: str, feedback: dict, say=None) -> None:
                 await _db.update_fix_history(fix_history_id, git_branch=branch)
             return
 
+        # Push branch to GitHub
+        github_url = None
+        try:
+            github_url = await _push_branch_to_github(project_root=state["fix_plan"].get("_project_root", "/workspace/data-pipeline-service"), branch=branch)
+        except Exception as e:
+            logger.warning("github_push_failed", error=str(e))
+
         if say:
             files_str = "\n".join(f"• `{f}`" for f in modified)
-            await say(f":white_check_mark: 코드 수정 완료\n*브랜치:* `{branch}`\n*커밋:* `{commit[:8]}`\n*수정 파일:*\n{files_str}")
+            msg = f":white_check_mark: 코드 수정 완료\n*브랜치:* `{branch}`\n*커밋:* `{commit[:8]}`\n*수정 파일:*\n{files_str}"
+            if github_url:
+                msg += f"\n*GitHub:* {github_url}"
+            await say(msg)
 
         # Step 2: Build image
         if say:
@@ -286,7 +336,39 @@ async def _handle_approval(thread_id: str, feedback: dict, say=None) -> None:
 
         if say:
             if post_status == "deployed":
-                await say(f":tada: 프로덕션 배포 완료!\n*이미지:* `{deployment['harbor_image']}`")
+                from src.slack.bot import get_slack_app
+                from src.config.settings import get_settings
+                slack_app = get_slack_app()
+                settings = get_settings()
+
+                # Send deployment complete with Git action buttons
+                git_repo_url = settings.target_projects[0].git_repo.replace(".git", "") if settings.target_projects else ""
+                branch_url = f"{git_repo_url}/tree/{branch}" if git_repo_url.startswith("http") else ""
+
+                blocks = [
+                    {"type": "section", "text": {"type": "mrkdwn", "text":
+                        f":tada: *배포 완료*\n"
+                        f"*이미지:* `{deployment['harbor_image']}`\n"
+                        f"*브랜치:* `{branch}` ({commit[:8]})\n"
+                        f"{f'*GitHub:* {branch_url}' if branch_url else ''}"
+                    }},
+                    {"type": "divider"},
+                    {"type": "section", "text": {"type": "mrkdwn", "text":
+                        "변경사항을 어떻게 처리할까요?"
+                    }},
+                    {"type": "actions", "block_id": f"git_{thread_id}", "elements": [
+                        {"type": "button", "text": {"type": "plain_text", "text": "PR 생성"},
+                         "style": "primary", "action_id": "create_pr", "value": f"{thread_id}|{branch}"},
+                        {"type": "button", "text": {"type": "plain_text", "text": "바로 Merge"},
+                         "action_id": "merge_branch", "value": f"{thread_id}|{branch}"},
+                        {"type": "button", "text": {"type": "plain_text", "text": "브랜치만 유지"},
+                         "action_id": "keep_branch", "value": f"{thread_id}|{branch}"},
+                    ]},
+                ]
+                await slack_app.client.chat_postMessage(
+                    channel=settings.slack.channel, blocks=blocks,
+                    text=f"배포 완료 - 브랜치 {branch} 처리 방법을 선택하세요",
+                )
             elif post_status == "rollback":
                 await say(":warning: 프로덕션 배포 실패 → 자동 롤백됨")
             else:
@@ -298,3 +380,132 @@ async def _handle_approval(thread_id: str, feedback: dict, say=None) -> None:
         logger.error("approval_handling_failed", thread_id=thread_id, error=str(e))
         if say:
             await say(f":x: 수정 작업 중 오류: {str(e)[:300]}")
+
+
+async def _push_branch_to_github(project_root: str, branch: str) -> str | None:
+    """Push a branch to GitHub remote. Returns the branch URL."""
+    import subprocess
+    from src.config.settings import get_settings
+
+    settings = get_settings()
+    token = settings.github.token
+    user = settings.github.user
+    repo_url = settings.target_projects[0].git_repo if settings.target_projects else ""
+
+    if not token or not repo_url:
+        logger.warning("github_not_configured")
+        return None
+
+    # Set remote URL with token
+    auth_url = repo_url.replace("https://", f"https://{user}:{token}@")
+
+    result = subprocess.run(
+        ["git", "-C", project_root, "remote", "get-url", "origin"],
+        capture_output=True, text=True,
+    )
+    if result.returncode != 0:
+        subprocess.run(
+            ["git", "-C", project_root, "remote", "add", "origin", auth_url],
+            capture_output=True, text=True,
+        )
+    else:
+        subprocess.run(
+            ["git", "-C", project_root, "remote", "set-url", "origin", auth_url],
+            capture_output=True, text=True,
+        )
+
+    push_result = subprocess.run(
+        ["git", "-C", project_root, "push", "-u", "origin", branch, "--force"],
+        capture_output=True, text=True, timeout=30,
+    )
+
+    if push_result.returncode != 0:
+        logger.error("github_push_failed", stderr=push_result.stderr[:300])
+        return None
+
+    branch_url = repo_url.replace(".git", "") + f"/tree/{branch}"
+    logger.info("github_branch_pushed", branch=branch, url=branch_url)
+    return branch_url
+
+
+async def _github_create_pr(branch: str) -> str | None:
+    """Create a GitHub PR from the branch to main."""
+    import httpx
+    from src.config.settings import get_settings
+
+    settings = get_settings()
+    token = settings.github.token
+    repo_url = settings.target_projects[0].git_repo if settings.target_projects else ""
+
+    if not token or not repo_url:
+        return None
+
+    # Extract owner/repo from URL
+    parts = repo_url.replace("https://github.com/", "").replace(".git", "").split("/")
+    if len(parts) < 2:
+        return None
+    owner, repo = parts[0], parts[1]
+
+    async with httpx.AsyncClient() as client:
+        resp = await client.post(
+            f"https://api.github.com/repos/{owner}/{repo}/pulls",
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Accept": "application/vnd.github.v3+json",
+            },
+            json={
+                "title": f"fix: Auto-fix by Error Log Agent ({branch})",
+                "head": branch,
+                "base": "main",
+                "body": f"Error Log Agent가 자동으로 생성한 수정 PR입니다.\n\n브랜치: `{branch}`",
+            },
+            timeout=15,
+        )
+
+    if resp.status_code == 201:
+        pr_url = resp.json().get("html_url", "")
+        logger.info("github_pr_created", url=pr_url)
+        return pr_url
+    else:
+        logger.error("github_pr_failed", status=resp.status_code, body=resp.text[:300])
+        return None
+
+
+async def _github_merge_branch(branch: str) -> bool:
+    """Merge a branch into main via GitHub API."""
+    import httpx
+    from src.config.settings import get_settings
+
+    settings = get_settings()
+    token = settings.github.token
+    repo_url = settings.target_projects[0].git_repo if settings.target_projects else ""
+
+    if not token or not repo_url:
+        return False
+
+    parts = repo_url.replace("https://github.com/", "").replace(".git", "").split("/")
+    if len(parts) < 2:
+        return False
+    owner, repo = parts[0], parts[1]
+
+    async with httpx.AsyncClient() as client:
+        resp = await client.post(
+            f"https://api.github.com/repos/{owner}/{repo}/merges",
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Accept": "application/vnd.github.v3+json",
+            },
+            json={
+                "base": "main",
+                "head": branch,
+                "commit_message": f"Merge {branch} - Auto-fix by Error Log Agent",
+            },
+            timeout=15,
+        )
+
+    if resp.status_code in (201, 204):
+        logger.info("github_merge_completed", branch=branch)
+        return True
+    else:
+        logger.error("github_merge_failed", status=resp.status_code, body=resp.text[:300])
+        return False
