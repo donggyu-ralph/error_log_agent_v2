@@ -26,11 +26,18 @@ function FixHistory() {
     if (h.production_deployed) return <span className="badge success">Deployed</span>;
     if (h.staging_result === 'healthy') return <span className="badge info">Staging OK</span>;
     if (h.action === 'reject') return <span className="badge warning">Rejected</span>;
-    return <span className="badge error">Failed</span>;
+    if (h.action === 'approve') return <span className="badge info">In Progress</span>;
+    return <span className="badge error">Pending</span>;
   };
 
   const handleRowClick = (h) => {
     setSelected(selected?.id === h.id ? null : h);
+  };
+
+  const parsePlan = (raw) => {
+    if (!raw) return null;
+    if (typeof raw === 'object') return raw;
+    try { return JSON.parse(raw); } catch { return null; }
   };
 
   return (
@@ -77,145 +84,135 @@ function FixHistory() {
         </div>
       </div>
 
-      {selected && (
-        <div className="card" style={{ marginTop: 16 }}>
-          <h3>Fix Detail — {selected.thread_id?.slice(0, 8) || 'N/A'}</h3>
+      {selected && (() => {
+        const plan = parsePlan(selected.fix_plan);
 
-          {/* Analysis */}
-          <div className="detail-section">
-            <h4>Analysis</h4>
-            {selected.analysis ? (
-              <pre className="code-block">{typeof selected.analysis === 'string' ? selected.analysis : JSON.stringify(selected.analysis, null, 2)}</pre>
-            ) : (
-              <p style={{ color: '#8b949e', fontSize: 13 }}>분석 데이터 없음</p>
+        return (
+          <div className="card" style={{ marginTop: 16 }}>
+            <h3>Fix Detail — {selected.thread_id?.slice(0, 8) || 'N/A'}</h3>
+
+            {/* Summary */}
+            {plan?.summary && (
+              <div className="detail-section">
+                <h4>Summary</h4>
+                <p style={{ color: '#c9d1d9', fontSize: 14 }}>{plan.summary}</p>
+              </div>
             )}
-          </div>
 
-          {/* Fix Plan */}
-          <div className="detail-section">
-            <h4>Fix Plan</h4>
-            {selected.fix_plan ? (
-              <div>
-                {(() => {
-                  const plan = typeof selected.fix_plan === 'string'
-                    ? (() => { try { return JSON.parse(selected.fix_plan); } catch { return null; } })()
-                    : selected.fix_plan;
+            {/* Root Cause */}
+            {plan?.root_cause && (
+              <div className="detail-section">
+                <h4>Root Cause</h4>
+                <p style={{ color: '#c9d1d9', fontSize: 13 }}>{plan.root_cause}</p>
+              </div>
+            )}
 
-                  if (!plan) {
-                    return <pre className="code-block">{selected.fix_plan}</pre>;
-                  }
+            {/* Fix Description */}
+            {plan?.fix_description && (
+              <div className="detail-section">
+                <h4>Fix Description</h4>
+                <p style={{ color: '#c9d1d9', fontSize: 13 }}>{plan.fix_description}</p>
+              </div>
+            )}
 
-                  return (
-                    <div>
-                      {plan.target_files && plan.target_files.length > 0 && (
-                        <div style={{ marginBottom: 12 }}>
-                          <span style={{ color: '#8b949e', fontSize: 12 }}>Target Files:</span>
-                          <div style={{ marginTop: 4 }}>
-                            {plan.target_files.map((f, i) => (
-                              <span key={i} className="badge info" style={{ marginRight: 6, marginBottom: 4 }}>{f}</span>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                      {plan.description && (
-                        <div style={{ marginBottom: 12 }}>
-                          <span style={{ color: '#8b949e', fontSize: 12 }}>Description:</span>
-                          <p style={{ color: '#c9d1d9', fontSize: 13, marginTop: 4 }}>{plan.description}</p>
-                        </div>
-                      )}
-                      {plan.changes && (
-                        <div style={{ marginBottom: 12 }}>
-                          <span style={{ color: '#8b949e', fontSize: 12 }}>Changes:</span>
-                          <pre className="code-block">{typeof plan.changes === 'string' ? plan.changes : JSON.stringify(plan.changes, null, 2)}</pre>
-                        </div>
-                      )}
-                      {plan.diff && (
-                        <div style={{ marginBottom: 12 }}>
-                          <span style={{ color: '#8b949e', fontSize: 12 }}>Diff Preview:</span>
-                          <pre className="code-block">{plan.diff}</pre>
-                        </div>
-                      )}
-                      {!plan.target_files && !plan.description && !plan.changes && !plan.diff && (
-                        <pre className="code-block">{JSON.stringify(plan, null, 2)}</pre>
-                      )}
+            {/* Target Files + Diff */}
+            {plan?.target_files && plan.target_files.length > 0 && (
+              <div className="detail-section">
+                <h4>Modified Files</h4>
+                {plan.target_files.map((tf, i) => (
+                  <div key={i} style={{ marginBottom: 16, padding: 12, background: '#0d1117', borderRadius: 6, border: '1px solid #30363d' }}>
+                    <div style={{ marginBottom: 8 }}>
+                      <span className="badge info">{typeof tf === 'string' ? tf : tf.file_path || 'unknown'}</span>
                     </div>
-                  );
-                })()}
+                    {tf.changes_description && (
+                      <p style={{ color: '#8b949e', fontSize: 12, marginBottom: 8 }}>{tf.changes_description}</p>
+                    )}
+                    {tf.diff_preview && tf.diff_preview !== 'N/A' && (
+                      <pre className="code-block" style={{ margin: 0, fontSize: 11 }}>{tf.diff_preview}</pre>
+                    )}
+                  </div>
+                ))}
               </div>
-            ) : (
-              <p style={{ color: '#8b949e', fontSize: 13 }}>수정 계획 없음</p>
             )}
-          </div>
 
-          {/* Git & Deployment Info */}
-          <div className="detail-section">
-            <h4>Git & Deployment</h4>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-              <div>
-                <span style={{ color: '#8b949e', fontSize: 12 }}>Branch:</span>
-                <div style={{ fontFamily: 'monospace', fontSize: 13, color: '#c9d1d9', marginTop: 2 }}>
-                  {selected.git_branch || '-'}
-                </div>
+            {/* Risk */}
+            {plan?.estimated_risk && (
+              <div className="detail-section">
+                <h4>Risk Level</h4>
+                <span className={`badge ${plan.estimated_risk === 'low' ? 'success' : plan.estimated_risk === 'high' ? 'error' : 'warning'}`}>
+                  {plan.estimated_risk}
+                </span>
               </div>
-              <div>
-                <span style={{ color: '#8b949e', fontSize: 12 }}>Commit:</span>
-                <div style={{ fontFamily: 'monospace', fontSize: 13, color: '#c9d1d9', marginTop: 2 }}>
-                  {selected.git_commit?.slice(0, 12) || selected.commit_sha?.slice(0, 12) || '-'}
-                </div>
-              </div>
-              <div>
-                <span style={{ color: '#8b949e', fontSize: 12 }}>Harbor Image:</span>
-                <div style={{ fontFamily: 'monospace', fontSize: 12, color: '#c9d1d9', marginTop: 2, wordBreak: 'break-all' }}>
-                  {selected.harbor_image || '-'}
-                </div>
-              </div>
-              <div>
-                <span style={{ color: '#8b949e', fontSize: 12 }}>Action:</span>
-                <div style={{ marginTop: 2 }}>
-                  <span className={`badge ${selected.action === 'approve' ? 'success' : selected.action === 'reject' ? 'warning' : 'info'}`}>
-                    {selected.action || '-'}
-                  </span>
-                </div>
-              </div>
-            </div>
-          </div>
+            )}
 
-          {/* Staging & Production Status */}
-          <div className="detail-section">
-            <h4>Deployment Status</h4>
-            <div style={{ display: 'flex', gap: 24 }}>
-              <div>
-                <span style={{ color: '#8b949e', fontSize: 12 }}>Staging Result:</span>
-                <div style={{ marginTop: 4 }}>
-                  {selected.staging_result ? (
-                    <span className={`badge ${selected.staging_result === 'healthy' ? 'success' : 'error'}`}>
-                      {selected.staging_result}
-                    </span>
-                  ) : (
-                    <span style={{ color: '#8b949e', fontSize: 13 }}>-</span>
-                  )}
-                </div>
+            {/* Analysis */}
+            {selected.analysis && (
+              <div className="detail-section">
+                <h4>LLM Analysis</h4>
+                <pre className="code-block" style={{ maxHeight: 300, overflow: 'auto' }}>
+                  {selected.analysis}
+                </pre>
               </div>
-              <div>
-                <span style={{ color: '#8b949e', fontSize: 12 }}>Production Deployed:</span>
-                <div style={{ marginTop: 4 }}>
-                  <span className={`badge ${selected.production_deployed ? 'success' : 'warning'}`}>
-                    {selected.production_deployed ? 'Yes' : 'No'}
-                  </span>
-                </div>
-              </div>
-            </div>
-          </div>
+            )}
 
-          {/* Rollback info if present */}
-          {selected.rollback_reason && (
+            {/* Git & Deployment Info */}
             <div className="detail-section">
-              <h4>Rollback Reason</h4>
-              <pre className="code-block">{selected.rollback_reason}</pre>
+              <h4>Git & Deployment</h4>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                <div>
+                  <span style={{ color: '#8b949e', fontSize: 12 }}>Branch:</span>
+                  <div style={{ fontFamily: 'monospace', fontSize: 13, color: '#58a6ff', marginTop: 2 }}>
+                    {selected.git_branch || '-'}
+                  </div>
+                </div>
+                <div>
+                  <span style={{ color: '#8b949e', fontSize: 12 }}>Commit:</span>
+                  <div style={{ fontFamily: 'monospace', fontSize: 13, color: '#c9d1d9', marginTop: 2 }}>
+                    {(selected.git_commit || '-').slice(0, 12)}
+                  </div>
+                </div>
+                <div>
+                  <span style={{ color: '#8b949e', fontSize: 12 }}>Harbor Image:</span>
+                  <div style={{ fontFamily: 'monospace', fontSize: 12, color: '#c9d1d9', marginTop: 2, wordBreak: 'break-all' }}>
+                    {selected.harbor_image || '-'}
+                  </div>
+                </div>
+                <div>
+                  <span style={{ color: '#8b949e', fontSize: 12 }}>Action:</span>
+                  <div style={{ marginTop: 2 }}>
+                    <span className={`badge ${selected.action === 'approve' ? 'success' : selected.action === 'reject' ? 'warning' : 'info'}`}>
+                      {selected.action || '-'}
+                    </span>
+                  </div>
+                </div>
+              </div>
             </div>
-          )}
-        </div>
-      )}
+
+            {/* Deployment Status */}
+            <div className="detail-section">
+              <h4>Deployment Status</h4>
+              <div style={{ display: 'flex', gap: 24 }}>
+                <div>
+                  <span style={{ color: '#8b949e', fontSize: 12 }}>Staging:</span>
+                  <div style={{ marginTop: 4 }}>
+                    <span className={`badge ${selected.staging_result === 'healthy' ? 'success' : selected.staging_result ? 'error' : 'info'}`}>
+                      {selected.staging_result || 'N/A'}
+                    </span>
+                  </div>
+                </div>
+                <div>
+                  <span style={{ color: '#8b949e', fontSize: 12 }}>Production:</span>
+                  <div style={{ marginTop: 4 }}>
+                    <span className={`badge ${selected.production_deployed ? 'success' : 'warning'}`}>
+                      {selected.production_deployed ? 'Deployed' : 'Not Deployed'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }
