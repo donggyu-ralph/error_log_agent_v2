@@ -30,7 +30,8 @@ COPY target-source/ /workspace/data-pipeline-service/
 RUN cd /workspace/data-pipeline-service && \
     git init && git add -A && \
     git -c user.email="agent@atdev.ai" -c user.name="Error Log Agent" \
-    commit -m "Initial: data-pipeline-service source"
+    commit -m "Initial: data-pipeline-service source" && \
+    git remote add origin https://github.com/donggyu-ralph/pipeline_target_service.git
 
 EXPOSE 8000
 

@@ -232,10 +232,9 @@ async def _resume_graph(thread_id: str, feedback: dict, say=None) -> None:
         if say:
             await say(":gear: 에이전트가 작업을 재개합니다...")
 
-        # This resumes the graph and runs through remaining nodes
-        result = await asyncio.to_thread(
-            _resume_sync, agent, feedback, config
-        )
+        # Resume the graph — continues from where interrupt() paused
+        from langgraph.types import Command
+        result = await agent.ainvoke(Command(resume=feedback), config=config)
 
         logger.info("graph_resumed_completed", thread_id=thread_id)
 
@@ -251,12 +250,6 @@ async def _resume_graph(thread_id: str, feedback: dict, say=None) -> None:
         logger.error("graph_resume_failed", thread_id=thread_id, error=str(e))
         if say:
             await say(f":x: 작업 중 오류: {str(e)[:300]}")
-
-
-def _resume_sync(agent, feedback, config):
-    """Synchronous graph resume (runs in thread to avoid blocking event loop)."""
-    from langgraph.types import Command
-    return agent.invoke(Command(resume=feedback), config=config)
 
 
 async def _report_result(result: dict, thread_id: str, say) -> None:
