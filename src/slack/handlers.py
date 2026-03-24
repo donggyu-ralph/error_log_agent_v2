@@ -75,6 +75,8 @@ def register_handlers(app: AsyncApp) -> None:
     async def handle_feedback(ack, body, client):
         await ack()
         thread_id = body["actions"][0]["value"]
+        user = body["user"]["username"]
+        await _disable_buttons(client, body, f":speech_balloon: *피드백 입력 중* by @{user}")
         await client.views_open(
             trigger_id=body["trigger_id"],
             view={
@@ -95,12 +97,11 @@ def register_handlers(app: AsyncApp) -> None:
             },
         )
 
-    @app.view("")
+    import re as _re
+    @app.view(_re.compile(r"feedback_modal_.*"))
     async def handle_feedback_submit(ack, body, view, client):
         await ack()
         callback_id = view["callback_id"]
-        if not callback_id.startswith("feedback_modal_"):
-            return
         thread_id = callback_id.replace("feedback_modal_", "")
         user = body["user"]["username"]
         feedback_text = view["state"]["values"]["feedback_input"]["feedback_text"]["value"]
@@ -263,6 +264,26 @@ async def _resume_graph(thread_id: str, feedback: dict, say=None) -> None:
                 result = event.get("data", {}).get("output", {})
 
         logger.info("graph_resumed_completed", thread_id=thread_id)
+
+        # Check if graph hit another interrupt (e.g., feedback → re-analyze → new approval)
+        try:
+            state_after = agent.get_state(config)
+            if state_after.next:
+                logger.info("graph_re_interrupted", thread_id=thread_id, next_nodes=list(state_after.next))
+                # Send new Slack report for the updated plan
+                from src.server.scheduler import _send_slack_report
+                new_state = state_after.values
+                await _send_slack_report(
+                    thread_id=thread_id,
+                    error_logs=new_state.get("error_logs", []),
+                    analysis=new_state.get("analysis", ""),
+                    fix_plan=new_state.get("fix_plan"),
+                )
+                if say:
+                    await say(":arrows_counterclockwise: 피드백을 반영한 새 수정 계획이 생성되었습니다. 새 보고서를 확인해주세요.")
+                return
+        except Exception as e:
+            logger.warning("state_check_after_resume_failed", error=str(e))
 
         # Report final results to Slack
         if result and say:
