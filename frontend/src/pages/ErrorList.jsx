@@ -2,18 +2,24 @@ import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { getErrors } from '../api';
 
+const PAGE_SIZE = 20;
+
 function ErrorList() {
   const [errors, setErrors] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('');
+  const [page, setPage] = useState(0);
+  const [total, setTotal] = useState(0);
 
   useEffect(() => {
     async function fetchErrors() {
+      setLoading(true);
       try {
-        const params = { limit: 100 };
+        const params = { limit: PAGE_SIZE, offset: page * PAGE_SIZE };
         if (filter) params.service_name = filter;
         const res = await getErrors(params);
         setErrors(res.data);
+        setTotal(res.data.length);
       } catch (err) {
         console.error('Failed to fetch errors:', err);
       } finally {
@@ -21,9 +27,9 @@ function ErrorList() {
       }
     }
     fetchErrors();
-  }, [filter]);
+  }, [filter, page]);
 
-  if (loading) return <div className="loading">Loading...</div>;
+  if (loading && page === 0) return <div className="loading">Loading...</div>;
 
   const services = [...new Set(errors.map(e => e.service_name).filter(Boolean))];
 
@@ -31,10 +37,10 @@ function ErrorList() {
     <div>
       <div className="page-header">
         <h1>Error Logs</h1>
-        <div>
+        <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
           <select
             value={filter}
-            onChange={e => setFilter(e.target.value)}
+            onChange={e => { setFilter(e.target.value); setPage(0); }}
             style={{ padding: '6px 12px', background: '#0d1117', border: '1px solid #30363d', borderRadius: 6, color: '#c9d1d9' }}
           >
             <option value="">All Services</option>
@@ -76,6 +82,17 @@ function ErrorList() {
               )}
             </tbody>
           </table>
+        </div>
+
+        {/* Pagination */}
+        <div className="pagination">
+          <button className="btn" disabled={page === 0} onClick={() => setPage(p => p - 1)}>
+            Previous
+          </button>
+          <span className="page-info">Page {page + 1}</span>
+          <button className="btn" disabled={total < PAGE_SIZE} onClick={() => setPage(p => p + 1)}>
+            Next
+          </button>
         </div>
       </div>
     </div>

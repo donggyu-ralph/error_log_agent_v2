@@ -190,6 +190,25 @@ tr:hover td {
 .badge.success { background: #0d2818; color: #3fb950; }
 .badge.info { background: #0c2d6b; color: #58a6ff; }
 
+/* Pagination */
+.pagination {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 16px;
+  padding: 16px 0 4px;
+}
+
+.pagination .page-info {
+  color: #8b949e;
+  font-size: 13px;
+}
+
+.pagination .btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
 /* Buttons */
 .btn {
   padding: 8px 16px;
