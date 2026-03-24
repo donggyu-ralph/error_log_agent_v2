@@ -122,6 +122,20 @@ async def apply_fix_node(state: AgentState) -> dict:
     for target in fix_plan.get("target_files", []):
         fp = target["file_path"]
 
+        # Normalize path: /app/src/... → src/..., or absolute → relative
+        if fp.startswith("/app/"):
+            fp = fp[len("/app/"):]
+        elif fp.startswith("/"):
+            # Try to extract relative path from absolute
+            for prefix in ["/workspace/data-pipeline-service/", project_root + "/"]:
+                if fp.startswith(prefix):
+                    fp = fp[len(prefix):]
+                    break
+            else:
+                # Last resort: take basename path starting from src/
+                if "/src/" in fp:
+                    fp = "src/" + fp.split("/src/", 1)[1]
+
         # Skip protected paths
         if any(fp.startswith(exc) for exc in project.exclude_paths):
             logger.warning("skipping_protected_file", file=fp)
@@ -133,8 +147,18 @@ async def apply_fix_node(state: AgentState) -> dict:
             if full_path.exists():
                 content = full_path.read_text(encoding="utf-8")
 
+        # Try alternative paths
         if not content:
-            logger.warning("file_not_found_for_fix", file=fp)
+            for alt in [fp.lstrip("/"), "src/" + fp.split("src/")[-1] if "src/" in fp else ""]:
+                if alt:
+                    alt_path = Path(project_root) / alt
+                    if alt_path.exists():
+                        fp = alt
+                        content = alt_path.read_text(encoding="utf-8")
+                        break
+
+        if not content:
+            logger.warning("file_not_found_for_fix", file=fp, project_root=project_root)
             continue
 
         fixed_content = await _apply_fix_to_file(

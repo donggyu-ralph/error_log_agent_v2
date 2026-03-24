@@ -44,26 +44,29 @@ async def plan_fix_node(state: AgentState) -> dict:
 {code_context}
 {feedback_context}
 ## 수정 계획 생성
-다음 JSON 형식으로 수정 계획을 생성하세요:
+
+중요: 반드시 순수 JSON만 출력하세요. 마크다운 코드블록(```)으로 감싸지 마세요.
+파일 경로는 "src/"로 시작하는 상대 경로를 사용하세요. "/app/" 같은 절대 경로를 사용하지 마세요.
+
 {{
     "summary": "수정 요약 (1-2문장)",
     "root_cause": "근본 원인",
     "fix_description": "수정 내용 상세 설명",
     "target_files": [
         {{
-            "file_path": "수정 대상 파일 경로",
+            "file_path": "src/경로/파일.py",
             "changes_description": "변경 내용 설명",
-            "diff_preview": "예상 diff (unified format)"
+            "diff_preview": "예상 diff"
         }}
     ],
     "estimated_risk": "low|medium|high",
-    "requires_restart": true|false
+    "requires_restart": false
 }}
 
 제약 사항:
 - 최대 5개 파일만 수정
 - 인프라 파일 (k8s/, Dockerfile) 수정 불가
-- 100줄 이내 변경
+- file_path는 반드시 "src/"로 시작하는 상대 경로
 """
 
     llm = ChatOpenAI(model=settings.llm.model, temperature=settings.llm.temperature, max_tokens=settings.llm.max_tokens)
@@ -76,29 +79,46 @@ async def plan_fix_node(state: AgentState) -> dict:
     raw = response.content
     fix_plan = None
 
+    def _try_parse(text: str) -> dict | None:
+        try:
+            return json.loads(text)
+        except (json.JSONDecodeError, TypeError):
+            return None
+
     # Try direct JSON parse
-    try:
-        fix_plan = json.loads(raw)
-    except json.JSONDecodeError:
-        pass
+    fix_plan = _try_parse(raw)
 
-    # Try extracting from markdown code block
+    # Try extracting from markdown code block (greedy to get the full JSON)
     if fix_plan is None:
-        json_match = re.search(r"```(?:json)?\s*(.*?)```", raw, re.DOTALL)
-        if json_match:
-            try:
-                fix_plan = json.loads(json_match.group(1))
-            except json.JSONDecodeError:
-                pass
+        # Find all code blocks and try each
+        for match in re.finditer(r"```(?:json)?\s*\n?([\s\S]*?)```", raw):
+            parsed = _try_parse(match.group(1).strip())
+            if parsed and isinstance(parsed, dict):
+                # Prefer the one with target_files
+                if parsed.get("target_files"):
+                    fix_plan = parsed
+                    break
+                elif fix_plan is None:
+                    fix_plan = parsed
 
-    # Try finding JSON object pattern
-    if fix_plan is None:
-        json_match = re.search(r'\{[^{}]*"summary"[^{}]*\}', raw, re.DOTALL)
-        if json_match:
-            try:
-                fix_plan = json.loads(json_match.group(0))
-            except json.JSONDecodeError:
-                pass
+    # Try finding the largest JSON object in the text
+    if fix_plan is None or not fix_plan.get("target_files"):
+        # Find JSON by matching braces
+        brace_depth = 0
+        start = None
+        for i, ch in enumerate(raw):
+            if ch == '{':
+                if brace_depth == 0:
+                    start = i
+                brace_depth += 1
+            elif ch == '}':
+                brace_depth -= 1
+                if brace_depth == 0 and start is not None:
+                    candidate = _try_parse(raw[start:i+1])
+                    if candidate and isinstance(candidate, dict) and candidate.get("target_files"):
+                        fix_plan = candidate
+                        break
+                    start = None
 
     # Fallback: use raw text
     if fix_plan is None:
