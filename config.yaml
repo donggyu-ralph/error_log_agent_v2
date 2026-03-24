@@ -1,0 +1,68 @@
+agent:
+  name: "error-log-agent-v2"
+  version: "2.0.0"
+
+log_collector:
+  interval_seconds: 120
+  sources:
+    - type: "k8s_pod"
+      namespace: "pipeline"
+      label_selector: "app=data-pipeline"
+      since_seconds: 120
+    - type: "remote_file"
+      host: "192.168.50.26"
+      user: "sam"
+      log_path: "/Users/sam/dev/Qwen3VL-32b/logs/mlx_server.stderr.log"
+  log_levels:
+    - "ERROR"
+    - "CRITICAL"
+
+target_projects:
+  - name: "data-pipeline-service"
+    git_repo: "/workspace/data-pipeline-service"
+    root_path: "/workspace/data-pipeline-service"
+    k8s:
+      namespace: "pipeline"
+      deployment: "data-pipeline"
+      staging_namespace: "pipeline-staging"
+    harbor:
+      project: "custom"
+      image_name: "data-pipeline"
+    exclude_paths:
+      - "venv/"
+      - "__pycache__/"
+      - ".git/"
+      - "k8s/"
+
+llm:
+  provider: "openai"
+  model: "gpt-4o-mini"
+  max_tokens: 4096
+  temperature: 0.0
+
+web_search:
+  enabled: true
+  provider: "tavily"
+  max_results: 5
+
+slack:
+  enabled: true
+  channel: "#error-log-agent"
+  approval_timeout_seconds: 3600
+
+deployer:
+  staging_verify_seconds: 60
+  staging_timeout_seconds: 120
+  production_rollout_timeout: 300
+  auto_rollback: true
+
+database:
+  host: "postgres.data.svc"
+  port: 5432
+  database: "error_log_agent"
+  user: "${PG_USER}"
+  password: "${PG_PASSWORD}"
+
+dashboard:
+  enabled: true
+  port: 3000

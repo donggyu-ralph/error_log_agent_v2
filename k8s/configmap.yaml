@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: agent-config
+  namespace: pipeline
+data:
+  AGENT_NAME: "error-log-agent-v2"
+  LOG_LEVEL: "INFO"
+  QWEN_BASE_URL: "http://192.168.50.26:32000/v1"
+  PG_HOST: "postgres.data.svc"
+  PG_PORT: "5432"
+  PG_DATABASE: "error_log_agent"
