@@ -1,4 +1,5 @@
 """K8s staging and production deployment nodes."""
+import asyncio
 import subprocess
 
 from src.agent.state import AgentState
@@ -16,6 +17,10 @@ def _kubectl(args: list[str], timeout: int = 60) -> subprocess.CompletedProcess:
 
 async def deploy_staging_node(state: AgentState) -> dict:
     """Deploy to staging namespace."""
+    return await asyncio.to_thread(_deploy_staging_sync, state)
+
+
+def _deploy_staging_sync(state: AgentState) -> dict:
     deployment = state.get("deployment")
     if not deployment:
         return {"staging_result": "unhealthy"}
@@ -86,6 +91,10 @@ async def deploy_staging_node(state: AgentState) -> dict:
 
 async def verify_staging_node(state: AgentState) -> dict:
     """Verify staging deployment is healthy."""
+    return await asyncio.to_thread(_verify_staging_sync, state)
+
+
+def _verify_staging_sync(state: AgentState) -> dict:
     deployment = state.get("deployment")
     if not deployment:
         return {"staging_result": "unhealthy"}
@@ -132,7 +141,7 @@ async def verify_staging_node(state: AgentState) -> dict:
                     logger.warning("staging_pod_unhealthy", phase=phase)
                     return {"staging_result": "unhealthy"}
 
-        await asyncio.sleep(10)
+        import time; time.sleep(10)
 
     if error_count > 0:
         logger.warning("staging_errors_detected", count=error_count)
@@ -144,6 +153,10 @@ async def verify_staging_node(state: AgentState) -> dict:
 
 async def deploy_production_node(state: AgentState) -> dict:
     """Deploy to production namespace."""
+    return await asyncio.to_thread(_deploy_production_sync, state)
+
+
+def _deploy_production_sync(state: AgentState) -> dict:
     deployment = state.get("deployment")
     if not deployment:
         return {"post_fix_status": "deploy_failed"}
