@@ -49,6 +49,7 @@ async def _run_agent_cycle():
         "max_iterations": 3,
         "messages": [],
         "actually_modified_files": [],
+        "error_history": [],
     }
 
     try:

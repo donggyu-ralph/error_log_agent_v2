@@ -22,3 +22,4 @@ class AgentState(TypedDict):
     max_iterations: int
     messages: Annotated[list, add_messages]
     actually_modified_files: list[str]
+    error_history: list[dict]  # Node errors: [{node, error_type, message, timestamp}]
