@@ -46,6 +46,12 @@ dev = [
     "pytest-asyncio>=0.24.0",
 ]
 
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+markers = [
+    "integration: tests requiring external service access (SSH, K8s, etc.)",
+]
+
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["src*"]
