@@ -14,6 +14,9 @@ from src.db.manager import DBManager
 from src.server.routes import router, set_db
 from src.server.scheduler import start_scheduler, stop_scheduler, set_scheduler_db
 from src.slack.bot import start_slack_bot, stop_slack_bot
+from src.auth.routes import router as auth_router
+from src.auth.manager import UserManager
+from src.auth.deps import set_user_manager
 
 
 @asynccontextmanager
@@ -30,6 +33,11 @@ async def lifespan(app: FastAPI):
     await db.initialize()
     set_db(db)
     set_scheduler_db(db)
+
+    # Initialize auth
+    user_mgr = UserManager(db.conn)
+    await user_mgr.initialize()
+    set_user_manager(user_mgr)
 
     # Start scheduler
     start_scheduler()
@@ -72,6 +80,7 @@ async def health():
     return {"status": "ok", "service": settings.agent_name, "version": settings.agent_version}
 
 
+app.include_router(auth_router)
 app.include_router(router)
 
 # Serve React frontend static files

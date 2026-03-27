@@ -1,8 +1,10 @@
 """REST API endpoints for the agent and dashboard."""
 from typing import Optional
 
-from fastapi import APIRouter, Query, HTTPException
+from fastapi import APIRouter, Query, HTTPException, Depends
 
+from src.auth.deps import get_current_user, require_auth, require_role
+from src.auth.schemas import UserRole
 from src.config.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -90,20 +92,20 @@ async def list_services():
 
 
 @router.post("/api/dashboard/services", status_code=201)
-async def add_service(service: dict):
-    """Add a monitored service."""
+async def add_service(service: dict, user: dict = Depends(require_role(UserRole.OPERATOR))):
+    """Add a monitored service (Operator+)."""
     svc_id = await _db.add_monitored_service(**service)
     return {"id": svc_id}
 
 
 @router.put("/api/dashboard/services/{service_id}")
-async def update_service(service_id: str, updates: dict):
-    """Update a monitored service."""
+async def update_service(service_id: str, updates: dict, user: dict = Depends(require_role(UserRole.OPERATOR))):
+    """Update a monitored service (Operator+)."""
     await _db.update_monitored_service(service_id, **updates)
     return {"status": "updated"}
 
 
 @router.delete("/api/dashboard/services/{service_id}", status_code=204)
-async def delete_service(service_id: str):
-    """Remove a monitored service."""
+async def delete_service(service_id: str, user: dict = Depends(require_role(UserRole.OPERATOR))):
+    """Remove a monitored service (Operator+)."""
     await _db.delete_monitored_service(service_id)
