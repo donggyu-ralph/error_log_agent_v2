@@ -3,7 +3,8 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from src.auth.schemas import UserCreate, UserLogin, UserUpdate, UserRead, UserRole, TokenResponse
 from src.auth.manager import create_access_token
-from src.auth.deps import require_auth, require_role, _user_manager
+from src.auth.deps import require_auth, require_role
+import src.auth.deps as auth_deps
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -12,7 +13,7 @@ router = APIRouter(prefix="/api/auth", tags=["auth"])
 async def register(data: UserCreate):
     """Register a new user."""
     try:
-        user = await _user_manager.create_user(data.email, data.password, data.role)
+        user = await auth_deps._user_manager.create_user(data.email, data.password, data.role)
         return UserRead(**user)
     except Exception as e:
         if "duplicate" in str(e).lower() or "unique" in str(e).lower():
@@ -23,7 +24,7 @@ async def register(data: UserCreate):
 @router.post("/login", response_model=TokenResponse)
 async def login(data: UserLogin):
     """Login and get JWT token."""
-    user = await _user_manager.authenticate(data.email, data.password)
+    user = await auth_deps._user_manager.authenticate(data.email, data.password)
     if not user:
         raise HTTPException(status_code=401, detail="Invalid email or password")
 
@@ -40,7 +41,7 @@ async def get_me(user: dict = Depends(require_auth)):
 @router.get("/users", response_model=list[UserRead])
 async def list_users(user: dict = Depends(require_role(UserRole.ADMIN))):
     """List all users (Admin only)."""
-    users = await _user_manager.list_users()
+    users = await auth_deps._user_manager.list_users()
     return [UserRead(**u) for u in users]
 
 
@@ -55,7 +56,7 @@ async def update_user(
     if not updates:
         raise HTTPException(status_code=400, detail="No updates provided")
 
-    success = await _user_manager.update_user(user_id, **updates)
+    success = await auth_deps._user_manager.update_user(user_id, **updates)
     if not success:
         raise HTTPException(status_code=404, detail="User not found")
     return {"status": "updated"}
@@ -69,6 +70,6 @@ async def delete_user(
     """Delete a user (Admin only)."""
     if user_id == user["id"]:
         raise HTTPException(status_code=400, detail="Cannot delete yourself")
-    success = await _user_manager.delete_user(user_id)
+    success = await auth_deps._user_manager.delete_user(user_id)
     if not success:
         raise HTTPException(status_code=404, detail="User not found")
