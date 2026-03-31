@@ -10,7 +10,7 @@ COPY pyproject.toml .
 RUN pip install --no-cache-dir -e .
 
 COPY src/ src/
-COPY config.yaml .
+COPY config.compose.yaml config.yaml
 
 EXPOSE 8000
 
