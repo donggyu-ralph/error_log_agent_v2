@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { getServices, addService, deleteService, updateService } from '../api';
 
 function Services() {
@@ -124,7 +125,9 @@ function Services() {
             <tbody>
               {services.map((svc, i) => (
                 <tr key={svc.id || i}>
-                  <td style={{ fontWeight: 600 }}>{svc.name}</td>
+                  <td style={{ fontWeight: 600 }}>
+                    <Link to={`/services/${svc.id}`} style={{ color: '#58a6ff', textDecoration: 'none' }}>{svc.name}</Link>
+                  </td>
                   <td><span className="badge info">{svc.source_type}</span></td>
                   <td>{svc.namespace || '-'}</td>
                   <td style={{ fontFamily: 'monospace', fontSize: 12 }}>

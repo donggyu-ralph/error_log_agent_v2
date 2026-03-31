@@ -37,4 +37,17 @@ export const addService = (data) => api.post('/services', data);
 export const updateService = (id, data) => api.put(`/services/${id}`, data);
 export const deleteService = (id) => api.delete(`/services/${id}`);
 
+// Service detail + members (uses /api/services base)
+const svcApi = axios.create({ baseURL: '/api/services', timeout: 10000 });
+svcApi.interceptors.request.use((config) => {
+  const token = localStorage.getItem('token');
+  if (token) config.headers.Authorization = `Bearer ${token}`;
+  return config;
+});
+
+export const getServiceDetail = (id) => svcApi.get(`/${id}`);
+export const getServiceMembers = (id) => svcApi.get(`/${id}/members`);
+export const inviteMember = (id, email) => svcApi.post(`/${id}/members`, { email });
+export const removeMember = (serviceId, userId) => svcApi.delete(`/${serviceId}/members/${userId}`);
+
 export default api;

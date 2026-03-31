@@ -118,7 +118,7 @@ async def _run_agent_cycle():
 
 
 async def _send_slack_report(thread_id, error_logs, analysis, fix_plan, fix_history_id=None):
-    """Send error report to Slack with approval buttons."""
+    """Send error report to Slack. Routes to service-specific channel if available."""
     try:
         from src.slack.bot import get_slack_app
         from src.slack.message_builder import build_error_report
@@ -133,13 +133,23 @@ async def _send_slack_report(thread_id, error_logs, analysis, fix_plan, fix_hist
             fix_plan=fix_plan,
         )
 
+        # Determine target channel: service-specific or default
+        channel = settings.slack.channel
+        if _db and error_logs:
+            service_name = error_logs[0].get("service_name")
+            if service_name:
+                svc_channel = await _db.get_service_slack_channel(service_name)
+                if svc_channel:
+                    channel = svc_channel
+                    logger.info("routing_to_service_channel", service=service_name, channel=svc_channel)
+
         await app.client.chat_postMessage(
-            channel=settings.slack.channel,
+            channel=channel,
             blocks=blocks,
             text=f"에러 감지: {error_logs[0].get('error_type', 'Unknown')}",
         )
 
-        logger.info("slack_report_sent", thread_id=thread_id)
+        logger.info("slack_report_sent", thread_id=thread_id, channel=channel)
 
     except Exception as e:
         logger.error("slack_send_failed", thread_id=thread_id, error=str(e))

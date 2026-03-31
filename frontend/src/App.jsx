@@ -6,6 +6,7 @@ import ErrorList from './pages/ErrorList';
 import ErrorDetail from './pages/ErrorDetail';
 import FixHistory from './pages/FixHistory';
 import Services from './pages/Services';
+import ServiceDetail from './pages/ServiceDetail';
 import Login from './pages/Login';
 import Register from './pages/Register';
 import './App.css';
@@ -47,6 +48,7 @@ function AppLayout() {
           <Route path="/errors/:id" element={<ErrorDetail />} />
           <Route path="/history" element={<FixHistory />} />
           <Route path="/services" element={<Services />} />
+            <Route path="/services/:id" element={<ServiceDetail />} />
         </Routes>
       </main>
     </div>

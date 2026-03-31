@@ -43,11 +43,40 @@ async def _disable_buttons(client, body, status_text: str):
 
 def register_handlers(app: AsyncApp) -> None:
 
+    async def _check_slack_permission(slack_user_id: str, say) -> bool:
+        """Check if Slack user has permission to approve/reject."""
+        try:
+            from src.server.scheduler import _db
+            from src.auth.manager import UserManager
+            import src.auth.deps as auth_deps
+
+            if not auth_deps._user_manager or not _db:
+                return True  # Skip check if auth not configured
+
+            # Find system user by slack_user_id
+            sys_user = await auth_deps._user_manager.get_user_by_slack_id(slack_user_id)
+            if not sys_user:
+                return True  # Allow if no Slack mapping (backward compat)
+
+            # Check if user is operator+ role
+            if sys_user.get("role") in ("operator", "admin"):
+                return True
+
+            await say(f":no_entry: 권한이 없습니다. Operator 이상 역할이 필요합니다.")
+            return False
+        except Exception:
+            return True  # Fail open
+
     @app.action("approve_fix")
     async def handle_approve(ack, body, say, client):
         await ack()
         thread_id = body["actions"][0]["value"]
         user = body["user"]["username"]
+        slack_user_id = body["user"]["id"]
+
+        # Permission check
+        if not await _check_slack_permission(slack_user_id, say):
+            return
 
         logger.info("fix_approved", thread_id=thread_id, user=user)
         await _disable_buttons(client, body, f":white_check_mark: *승인됨* by @{user}")
@@ -63,6 +92,10 @@ def register_handlers(app: AsyncApp) -> None:
         await ack()
         thread_id = body["actions"][0]["value"]
         user = body["user"]["username"]
+        slack_user_id = body["user"]["id"]
+
+        if not await _check_slack_permission(slack_user_id, say):
+            return
 
         logger.info("fix_rejected", thread_id=thread_id, user=user)
         await _disable_buttons(client, body, f":x: *거절됨* by @{user}")
