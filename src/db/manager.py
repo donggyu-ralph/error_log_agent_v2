@@ -70,13 +70,27 @@ CREATE TABLE IF NOT EXISTS monitored_services (
     log_path VARCHAR(500),
     git_repo VARCHAR(500),
     enabled BOOLEAN DEFAULT TRUE,
+    slack_channel_id VARCHAR(100),
+    created_by UUID,
     created_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS service_members (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    service_id UUID NOT NULL REFERENCES monitored_services(id) ON DELETE CASCADE,
+    user_id UUID NOT NULL,
+    role VARCHAR(20) NOT NULL DEFAULT 'member',
+    invited_by UUID,
+    created_at TIMESTAMP DEFAULT NOW(),
+    UNIQUE(service_id, user_id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_error_logs_timestamp ON error_logs(timestamp DESC);
 CREATE INDEX IF NOT EXISTS idx_error_logs_service ON error_logs(service_name);
 CREATE INDEX IF NOT EXISTS idx_error_logs_signature ON error_logs(signature);
 CREATE INDEX IF NOT EXISTS idx_fix_history_created ON fix_history(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_service_members_user ON service_members(user_id);
+CREATE INDEX IF NOT EXISTS idx_service_members_service ON service_members(service_id);
 CREATE INDEX IF NOT EXISTS idx_error_stats_date ON error_statistics(date, hour);
 """
 
@@ -248,3 +262,79 @@ class DBManager:
     async def delete_monitored_service(self, svc_id: str) -> None:
         with self.conn.cursor() as cur:
             cur.execute("DELETE FROM monitored_services WHERE id = %s", (svc_id,))
+
+    async def list_user_services(self, user_id: str) -> list[dict]:
+        """List services that a user is a member of."""
+        with self.conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                """SELECT ms.*, sm.role as member_role
+                   FROM monitored_services ms
+                   JOIN service_members sm ON ms.id = sm.service_id
+                   WHERE sm.user_id = %s
+                   ORDER BY ms.name""",
+                (user_id,),
+            )
+            return [dict(r) for r in cur.fetchall()]
+
+    async def get_service_by_id(self, svc_id: str) -> dict | None:
+        with self.conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute("SELECT * FROM monitored_services WHERE id = %s", (svc_id,))
+            row = cur.fetchone()
+            return dict(row) if row else None
+
+    # --- Service Members ---
+
+    async def add_service_member(self, service_id: str, user_id: str, role: str = "member", invited_by: str = None) -> str:
+        member_id = str(uuid.uuid4())
+        with self.conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO service_members (id, service_id, user_id, role, invited_by) VALUES (%s, %s, %s, %s, %s)",
+                (member_id, service_id, user_id, role, invited_by),
+            )
+        return member_id
+
+    async def list_service_members(self, service_id: str) -> list[dict]:
+        with self.conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                """SELECT sm.*, u.email, u.slack_user_id
+                   FROM service_members sm
+                   JOIN users u ON sm.user_id = u.id
+                   WHERE sm.service_id = %s
+                   ORDER BY sm.role, sm.created_at""",
+                (service_id,),
+            )
+            return [dict(r) for r in cur.fetchall()]
+
+    async def is_service_member(self, service_id: str, user_id: str) -> bool:
+        with self.conn.cursor() as cur:
+            cur.execute(
+                "SELECT 1 FROM service_members WHERE service_id = %s AND user_id = %s",
+                (service_id, user_id),
+            )
+            return cur.fetchone() is not None
+
+    async def get_service_member_role(self, service_id: str, user_id: str) -> str | None:
+        with self.conn.cursor() as cur:
+            cur.execute(
+                "SELECT role FROM service_members WHERE service_id = %s AND user_id = %s",
+                (service_id, user_id),
+            )
+            row = cur.fetchone()
+            return row[0] if row else None
+
+    async def remove_service_member(self, service_id: str, user_id: str) -> bool:
+        with self.conn.cursor() as cur:
+            cur.execute(
+                "DELETE FROM service_members WHERE service_id = %s AND user_id = %s",
+                (service_id, user_id),
+            )
+            return cur.rowcount > 0
+
+    async def get_service_slack_channel(self, service_name: str) -> str | None:
+        with self.conn.cursor() as cur:
+            cur.execute(
+                "SELECT slack_channel_id FROM monitored_services WHERE name = %s",
+                (service_name,),
+            )
+            row = cur.fetchone()
+            return row[0] if row else None
